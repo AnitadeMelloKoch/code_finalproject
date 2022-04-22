@@ -112,7 +112,7 @@ class StageIGAN():
             x_train = [x_train_files[idx] for idx in indices]
             train_embeds = train_embeds_list[indices]
 
-            for i in tqdm(range(num_batches)):
+            for i in tqdm(range(num_batches-1)):
 
                 latent_space = np.random.normal(0,1,size=(batch_size, self.embedding_dim))
                 idx = np.random.randint(train_embeds.shape[1])
@@ -120,6 +120,12 @@ class StageIGAN():
                 compressed_embedding = self.embedding_compressor.predict_on_batch(embedding_text)
                 compressed_embedding = np.reshape(compressed_embedding, (-1,1,1,128))
                 compressed_embedding = np.tile(compressed_embedding, (1,4,4,1))
+
+                idx = np.random.randint(train_embeds.shape[1])
+                embedding_text_wrong = train_embeds[(num_batches-1)*batch_size:(num_batches)*batch_size, idx,:]
+                compressed_embedding_wrong = self.embedding_compressor.predict_on_batch(embedding_text_wrong)
+                compressed_embedding_wrong = np.reshape(compressed_embedding_wrong, (-1,1,1,128))
+                compressed_embedding_wrong = np.tile(compressed_embedding_wrong, (1,4,4,1))
 
                 image_files = x_train[i*batch_size:(i+1)*batch_size]
                 image_batch = []
@@ -138,8 +144,8 @@ class StageIGAN():
                     np.reshape(fake, (batch_size, 1))
                 )
                 discriminator_loss_wrong = self.discriminator.train_on_batch(
-                    [gen_images[:batch_size-1], compressed_embedding[1:]],
-                    np.reshape(fake[1:], (batch_size-1,1))
+                    [image_batch, compressed_embedding_wrong],
+                    np.reshape(fake, (batch_size,1))
                 )
 
                 d_loss = 0.5*np.add(
