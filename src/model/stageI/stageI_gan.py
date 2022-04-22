@@ -54,11 +54,8 @@ class StageIGAN():
 
         self.path = os.path.join(base_path, 'stageI')
 
-        self.checkpoint = tf.train.Checkpoint(
-            generator_optimizer=self.generator_optimizer,
-            discriminator_optimizer=self.discriminator_optimizer,
-            generator=self.generator,
-            discriminator=self.discriminator
+        self.board = tf.summary.create_file_writer(
+            os.path.join(self.path, 'logs')
         )
 
     def save(self):
@@ -84,25 +81,16 @@ class StageIGAN():
         if os.path.exists(os.path.join(save_path, 'adv.h5')):
             self.adversarial.save_weights(os.path.join(save_path, 'adv.h5'))
 
-
-    def visualize(self):
-        self.board = tf.keras.callbacks.Tensorboard(
-            log_dir=os.path.join(self.path, 'logs')
-        )
-        self.board.set_model(self.generator)
-        self.board.set_model(self.discriminator)
-        self.board.set_model(self.ca_network)
-        self.board.set_model(self.embedding_compressor)
-
     def train(self,
         x_train_files,
         train_embeds_list,
         test_embeds,
-        epochs,
+        end_epoch,
+        start_epoch=0,
         batch_size=32):
 
-        real = np.ones((batch_size, 1), dtype='float')*0.9
-        fake = np.zeros((batch_size, 1), dtype='float')*0.1
+        real = np.ones((batch_size, 1), dtype='float')
+        fake = np.zeros((batch_size, 1), dtype='float')
 
         num_batches = int(len(x_train_files)/batch_size)
         indices = np.arange(len(x_train_files))
@@ -111,11 +99,14 @@ class StageIGAN():
         if not os.path.exists(image_path):
             os.makedirs(image_path)
 
-        for epoch in range(epochs):
+        for epoch in range(start_epoch, end_epoch):
             print("Epoch: {}".format(epoch))
 
             gen_loss = []
             dis_loss = []
+            dis_gen = []
+            dis_loss_true = []
+            dis_wrong = []
 
             np.random.shuffle(indices)
             x_train = [x_train_files[idx] for idx in indices]
@@ -156,16 +147,26 @@ class StageIGAN():
                     0.5*np.add(discriminator_loss_gen, discriminator_loss_wrong)
                 )
                 dis_loss.append(d_loss)
+                dis_gen.append(discriminator_loss_gen)
+                dis_loss_true.append(discriminator_loss)
+                dis_wrong.append(discriminator_loss_wrong)
 
                 g_loss = self.adversarial.train_on_batch(
                     [embedding_text, latent_space, compressed_embedding],
-                    [K.ones((batch_size, 1))*0.9, K.ones((batch_size, 256))*0.9]
+                    [K.ones((batch_size, 1)), K.ones((batch_size, 256))]
                 )
 
                 gen_loss.append(g_loss)
 
-            print("Discriminator Loss: {:.2f}".format(np.mean(dis_loss)))
-            print("    Generator Loss: {:.2f}".format(np.mean(gen_loss)))
+            print("Discriminator Loss: {}".format(np.mean(dis_loss)))
+            print("    Generator Loss: {}".format(np.mean(gen_loss)))
+
+            with self.board.as_default():
+                tf.summary.scalar('total_discriminator_loss', np.mean(dis_loss), step=epoch)
+                tf.summary.scalar('gen_discriminator_loss', np.mean(dis_gen), step=epoch)
+                tf.summary.scalar('true_discriminator_loss', np.mean(dis_loss_true), step=epoch)
+                tf.summary.scalar('false_discriminator_loss', np.mean(dis_wrong), step=epoch)
+                tf.summary.scalar('generator_loss', np.mean(gen_loss), step=epoch)
 
             if epoch % 5 == 0:
                 latent_space = np.random.normal(0,1,size=(batch_size, self.embedding_dim))
@@ -175,13 +176,23 @@ class StageIGAN():
                     [embedding_batch, latent_space]
                 )
 
-                for i, image in enumerate(gen_images[:10]):
-                    save_image(image, 
-                        os.path.join(image_path, 'gen_epoch{}_{}.png'.format(epoch, i))
-                    )
+                
+                save_image(gen_images[0], 
+                    os.path.join(image_path, 'gen_epoch{}.png'.format(epoch))
+                )
 
             if epoch % 25 == 0:
                 self.save()
             
+        latent_space = np.random.normal(0,1,size=(batch_size, self.embedding_dim))
+        idx = np.random.randint(train_embeds.shape[1])
+        embedding_batch = test_embeds[0:batch_size, idx,:]
+        gen_images, _ = self.generator.predict_on_batch(
+            [embedding_batch, latent_space]
+        )
+        save_image(gen_images[0], 
+            os.path.join(image_path, 'gen_final.png')
+        )
+
         self.save()
 

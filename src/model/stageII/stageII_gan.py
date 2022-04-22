@@ -61,11 +61,8 @@ class StageIIGAN():
             loss_weights=[1,2],
             optimizer=self.generator_optimizer
         )
-        self.checkpoint = tf.train.Checkpoint(
-            generator_optimizer=self.generator_optimizer,
-            discriminator_optimizer=self.discriminator_optimizer,
-            generator=self.generatorII,
-            discriminator=self.discriminator
+        self.board = tf.summary.create_file_writer(
+            os.path.join(self.path, 'logs')
         )
 
     def save(self):
@@ -96,19 +93,14 @@ class StageIIGAN():
             os.path.join(os.path.join(self.stageI_path, "weights", "gen.h5"))
         )
 
-    def visualize(self):
-        self.board = tf.keras.callbacks.Tensorboard(
-            log_dir=os.path.join(self.path, 'logs')
-        )
-        self.board.set_model(self.generatorII)
-        self.board.set_model(self.discriminator)
-
     def train(self,
         x_train_list,
         train_embeds,
         high_test_embeds,
         epochs,
         batch_size=32):
+
+        self.get_generatorI()
 
         real = np.ones((batch_size, 1), dtype='float')*0.9
         fake = np.zeros((batch_size, 1), dtype='float')*0.1
@@ -125,6 +117,9 @@ class StageIIGAN():
 
             gen_loss = []
             dis_loss = []
+            dis_gen = []
+            dis_loss_true = []
+            dis_wrong = []
 
             np.random.shuffle(indices)
             x_high_train = [x_train_list[idx] for idx in indices]
@@ -170,12 +165,23 @@ class StageIIGAN():
 
                 g_loss = self.adversarial.train_on_batch(
                     [embedding_text, latent_space, compressed_embedding],
-                    [K.ones((batch_size, 1))*0.9,K.ones((batch_size, 256))*0.9]
+                    [K.ones((batch_size, 1)),K.ones((batch_size, 256))]
                 )
                 gen_loss.append(g_loss)
+                dis_gen.append(discriminator_loss_gen)
+                dis_loss_true.append(discriminator_loss)
+                dis_wrong.append(discriminator_loss_fake)
 
-            print("Discriminator Loss: {:.2f}".format(np.mean(dis_loss)))
-            print("    Generator Loss: {:.2f}".format(np.mean(gen_loss)))
+            print("Discriminator Loss: {}".format(np.mean(dis_loss)))
+            print("    Generator Loss: {}".format(np.mean(gen_loss)))
+
+            with self.board.as_default():
+                tf.summary.scalar('total_discriminator_loss', np.mean(dis_loss), step=epoch)
+                tf.summary.scalar('gen_discriminator_loss', np.mean(dis_gen), step=epoch)
+                tf.summary.scalar('true_discriminator_loss', np.mean(dis_loss_true), step=epoch)
+                tf.summary.scalar('false_discriminator_loss', np.mean(dis_wrong), step=epoch)
+                tf.summary.scalar('generator_loss', np.mean(gen_loss), step=epoch)
+
 
             if epoch % 5 == 0:
                 latent_space = np.random.normal(0,1,size=(batch_size, self.embedding_dim))
@@ -185,11 +191,31 @@ class StageIIGAN():
                 low_fake_images, _ = self.generatorI.predict([embedding_batch, latent_space])
                 high_fake_images, _ = self.generatorII.predict([embedding_batch, low_fake_images])
 
-                for i, image in enumerate(high_fake_images[:10]):
-                    save_image(image, os.path.join(image_path, 'gen_epoch{}_{}.png'.format(epoch, i)))
+                save_image(high_fake_images[0], 
+                    os.path.join(image_path, 'gen_epoch{}_low.png'.format(epoch))
+                )
+
+                save_image(high_fake_images[0], 
+                    os.path.join(image_path, 'gen_epoch{}_high.png'.format(epoch))
+                )
 
             if epoch % 25 == 0:
                 self.save()
+
+        latent_space = np.random.normal(0,1,size=(batch_size, self.embedding_dim))
+        idx = np.random.randint(high_test_embeds.shape[1])
+        embedding_batch = high_test_embeds[0:batch_size, idx,:]
+
+        low_fake_images, _ = self.generatorI.predict([embedding_batch, latent_space])
+        high_fake_images, _ = self.generatorII.predict([embedding_batch, low_fake_images])
+
+        save_image(high_fake_images[0], 
+            os.path.join(image_path, 'gen_final_low.png')
+        )
+
+        save_image(high_fake_images[0], 
+            os.path.join(image_path, 'gen_final_high.png')
+        )
 
         self.save()
 
