@@ -27,6 +27,9 @@ class StageIGAN():
         self.generator_lr = generator_lr
         self.discriminator_lr = discriminator_lr
 
+        self.loss = tf.keras.losses.BinaryCrossentropy()
+        self.kl_loss = tf.keras.losses.KLDivergence()
+
         # setting these values as hard because models are hard coded with this
         # maybe set up a config file with these values?
         self.image_size = 64
@@ -36,27 +39,25 @@ class StageIGAN():
         self.discriminator_optimizer = Adam(lr=discriminator_lr, beta_1=0.5, beta_2=0.999)
         
         self.generator = build_stageI_generator()
-        self.generator.compile(loss='mse', optimizer=self.generator_optimizer)
 
         self.discriminator = build_stageI_discriminator()
-        self.discriminator.compile(loss='binary_crossentropy', optimizer=self.discriminator_optimizer)
 
         self.ca_network = build_ca_network()
-        self.ca_network.compile(loss='binary_crossentropy', optimizer='Adam')
 
         self.embedding_compressor = build_embedding_compressor()
-        self.embedding_compressor.compile(loss='binary_crossentropy', optimizer='Adam')
-
-        self.adversarial = build_stageI_adversarial(self.generator, self.discriminator)
-        self.adversarial.compile(loss=['binary_crossentropy', adversarial_loss],
-                    loss_weights=[1, 2],
-                    optimizer=self.generator_optimizer)
 
         self.path = os.path.join(base_path, 'stageI')
 
         self.board = tf.summary.create_file_writer(
             os.path.join(self.path, 'logs')
         )
+
+        self.true_loss = []
+        self.incorrect_caption_loss = []
+        self.fake_loss = []
+        self.dis_loss = []
+
+        self.gen_loss = []
 
     def save(self):
         save_path = os.path.join(self.path, 'weights')
@@ -66,31 +67,68 @@ class StageIGAN():
         self.discriminator.save_weights(os.path.join(save_path, 'dis.h5'))
         self.ca_network.save_weights(os.path.join(save_path, 'ca.h5'))
         self.embedding_compressor.save_weights(os.path.join(save_path, 'emb.h5'))
-        self.adversarial.save_weights(os.path.join(save_path, 'adv.h5'))
 
     def load(self):
         save_path = os.path.join(self.path, 'weights')
         if os.path.exists(os.path.join(save_path, 'gen.h5')):
             self.generator.load_weights(os.path.join(save_path, 'gen.h5'))
         if os.path.exists(os.path.join(save_path, 'dis.h5')):
-            self.discriminator.save_weights(os.path.join(save_path, 'dis.h5'))
+            self.discriminator.load_weights(os.path.join(save_path, 'dis.h5'))
         if os.path.exists(os.path.join(save_path, 'ca.h5')):
-            self.ca_network.save_weights(os.path.join(save_path, 'ca.h5'))
+            self.ca_network.load_weights(os.path.join(save_path, 'ca.h5'))
         if os.path.exists(os.path.join(save_path, 'emb.h5')):
-            self.embedding_compressor.save_weights(os.path.join(save_path, 'emb.h5'))
-        if os.path.exists(os.path.join(save_path, 'adv.h5')):
-            self.adversarial.save_weights(os.path.join(save_path, 'adv.h5'))
+            self.embedding_compressor.load_weights(os.path.join(save_path, 'emb.h5'))
+
+    def discriminator_loss(self, true_output, incorrect_caption_output, fake_output):
+        true_loss = self.loss(tf.ones_like(true_output), true_output)
+        incorrect_caption_loss = self.loss(tf.zeros_like(incorrect_caption_output), incorrect_caption_output)
+        fake_loss = self.loss(tf.zeros_like(fake_output), fake_output)
+
+        total_loss = true_loss + incorrect_caption_loss + fake_loss
+
+        self.true_loss.append(true_loss)
+        self.incorrect_caption_loss.append(incorrect_caption_loss)
+        self.fake_loss.append(fake_loss)
+        self.dis_loss.append(total_loss)
+
+        return total_loss
+
+    def generator_loss(self, fake_output):
+        bin_loss = self.loss(tf.ones_like(fake_output), fake_output)
+        kl_loss = self.kl_loss(tf.ones_like(fake_output), fake_output)
+
+        gen_loss = bin_loss + 2*kl_loss
+
+        self.gen_loss.append(gen_loss)
+
+        return gen_loss
+
+    def start_epoch(self):
+
+        self.true_loss = []
+        self.incorrect_caption_loss = []
+        self.fake_loss = []
+        self.dis_loss = []
+
+        self.gen_loss = []
+
+    def end_epoch(self, epoch):
+        with self.board.as_default():
+            tf.summary.scalar('True_discriminator_loss', np.mean(self.true_loss), step=epoch)
+            tf.summary.scalar('Incorrect_caption_discriminator_loss', np.mean(self.incorrect_caption_loss), step=epoch)
+            tf.summary.scalar('Fake_discriminator_loss', np.mean(self.fake_loss), step=epoch)
+            tf.summary.scalar('Total_discriminator_loss', np.mean(self.dis_loss), step=epoch)
+            tf.summary.scalar('Generator_loss', np.mean(self.gen_loss), step=epoch)
+            
 
     def train(self,
         x_train_files,
+        test_files,
         train_embeds_list,
         test_embeds,
         end_epoch,
         start_epoch=0,
         batch_size=32):
-
-        real = np.ones((batch_size, 1), dtype='float')
-        fake = np.zeros((batch_size, 1), dtype='float')
 
         num_batches = int(len(x_train_files)/batch_size)
         indices = np.arange(len(x_train_files))
@@ -102,15 +140,11 @@ class StageIGAN():
         for epoch in range(start_epoch, end_epoch):
             print("Epoch: {}".format(epoch))
 
-            gen_loss = []
-            dis_loss = []
-            dis_gen = []
-            dis_loss_true = []
-            dis_wrong = []
-
             np.random.shuffle(indices)
             x_train = [x_train_files[idx] for idx in indices]
             train_embeds = train_embeds_list[indices]
+
+            self.start_epoch()
 
             for i in tqdm(range(num_batches-1)):
 
@@ -122,7 +156,7 @@ class StageIGAN():
                 compressed_embedding = np.tile(compressed_embedding, (1,4,4,1))
 
                 idx = np.random.randint(train_embeds.shape[1])
-                embedding_text_wrong = train_embeds[(num_batches-1)*batch_size:(num_batches)*batch_size, idx,:]
+                embedding_text_wrong = train_embeds[(i+1)*batch_size:(i+2)*batch_size, idx,:]
                 compressed_embedding_wrong = self.embedding_compressor.predict_on_batch(embedding_text_wrong)
                 compressed_embedding_wrong = np.reshape(compressed_embedding_wrong, (-1,1,1,128))
                 compressed_embedding_wrong = np.tile(compressed_embedding_wrong, (1,4,4,1))
@@ -133,71 +167,53 @@ class StageIGAN():
                     image_batch.append(get_image(file, high_res=False))
                 image_batch = np.array(image_batch)
 
-                gen_images, _ = self.generator.predict([embedding_text, latent_space])
+                with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
+                
+                    gen_images = self.generator([embedding_text, latent_space], training=True)
 
-                discriminator_loss = self.discriminator.train_on_batch(
-                    [image_batch, compressed_embedding],
-                    np.reshape(real, (batch_size, 1))
-                )
-                discriminator_loss_gen = self.discriminator.train_on_batch(
-                    [gen_images, compressed_embedding],
-                    np.reshape(fake, (batch_size, 1))
-                )
-                discriminator_loss_wrong = self.discriminator.train_on_batch(
-                    [image_batch, compressed_embedding_wrong],
-                    np.reshape(fake, (batch_size,1))
-                )
+                    real_output = self.discriminator([image_batch[:batch_size//2], compressed_embedding[:batch_size//2]], training=True)
+                    capt_wrong_output = self.discriminator([image_batch[batch_size-batch_size//2:], compressed_embedding_wrong[batch_size-batch_size//2:]], training=True)
+                    gen_output = self.discriminator([gen_images, compressed_embedding], training=True)
 
-                d_loss = 0.5*np.add(
-                    discriminator_loss,
-                    0.5*np.add(discriminator_loss_gen, discriminator_loss_wrong)
-                )
-                dis_loss.append(d_loss)
-                dis_gen.append(discriminator_loss_gen)
-                dis_loss_true.append(discriminator_loss)
-                dis_wrong.append(discriminator_loss_wrong)
+                    gen_loss = self.generator_loss(gen_output)
+                    disc_loss = self.discriminator_loss(real_output, capt_wrong_output, gen_output)
 
-                g_loss = self.adversarial.train_on_batch(
-                    [embedding_text, latent_space, compressed_embedding],
-                    [K.ones((batch_size, 1)), K.ones((batch_size, 256))]
-                )
+                gradients_gen = gen_tape.gradient(gen_loss, self.generator.trainable_variables)
+                gradients_disc = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
 
-                gen_loss.append(g_loss)
+                self.generator_optimizer.apply_gradients(zip(gradients_gen, self.generator.trainable_variables))
+                self.discriminator_optimizer.apply_gradients(zip(gradients_disc, self.discriminator.trainable_variables))
 
-            print("Discriminator Loss: {}".format(np.mean(dis_loss)))
-            print("    Generator Loss: {}".format(np.mean(gen_loss)))
+            print("Discriminator Loss: {}".format(np.mean(self.dis_loss)))
+            print("    Generator Loss: {}".format(np.mean(self.gen_loss)))
 
-            with self.board.as_default():
-                tf.summary.scalar('total_discriminator_loss', np.mean(dis_loss), step=epoch)
-                tf.summary.scalar('gen_discriminator_loss', np.mean(dis_gen), step=epoch)
-                tf.summary.scalar('true_discriminator_loss', np.mean(dis_loss_true), step=epoch)
-                tf.summary.scalar('false_discriminator_loss', np.mean(dis_wrong), step=epoch)
-                tf.summary.scalar('generator_loss', np.mean(gen_loss), step=epoch)
-
+            self.end_epoch(epoch)
+            
             if epoch % 5 == 0:
                 latent_space = np.random.normal(0,1,size=(batch_size, self.embedding_dim))
                 idx = np.random.randint(train_embeds.shape[1])
                 embedding_batch = test_embeds[0:batch_size, idx,:]
-                gen_images, _ = self.generator.predict_on_batch(
+                gen_images = self.generator.predict_on_batch(
                     [embedding_batch, latent_space]
                 )
 
                 
                 save_image(gen_images[0], 
-                    os.path.join(image_path, 'gen_epoch{}.png'.format(epoch))
+                    os.path.join(image_path, 'gen_epoch{}.png'.format(epoch)),
+                    test_files[0]
                 )
 
-            if epoch % 25 == 0:
-                self.save()
+            self.save()
             
         latent_space = np.random.normal(0,1,size=(batch_size, self.embedding_dim))
         idx = np.random.randint(train_embeds.shape[1])
         embedding_batch = test_embeds[0:batch_size, idx,:]
-        gen_images, _ = self.generator.predict_on_batch(
+        gen_images = self.generator.predict_on_batch(
             [embedding_batch, latent_space]
         )
-        save_image(gen_images[0], 
-            os.path.join(image_path, 'gen_final.png')
+        save_image(gen_images[3], 
+            os.path.join(image_path, 'gen_final.png'),
+            test_files[3]
         )
 
         self.save()

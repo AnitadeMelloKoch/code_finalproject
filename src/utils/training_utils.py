@@ -35,7 +35,7 @@ def normalize(input_image, real_image):
 
     return input_image, real_image
 
-def save_image(file, save_path):
+def save_image(file, save_path, title):
     min_val = np.min(file)
     if min_val < 0:
         file = file - min_val
@@ -46,4 +46,5 @@ def save_image(file, save_path):
     ax = image.add_subplot(1,1,1)
     ax.imshow(file)
     ax.axis("off")
+    ax.set_title(title)
     plt.savefig(save_path)

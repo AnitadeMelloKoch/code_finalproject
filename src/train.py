@@ -25,6 +25,7 @@ files = [files[idx] for idx in indices]
 caption_embeds = caption_embeds[indices]
 
 image_files = files[:train_num]
+test_files = files[train_num:]
 
 train_embeds = caption_embeds[:train_num]
 test_embeds = caption_embeds[train_num:]
@@ -33,27 +34,29 @@ run_dir = 'runs/'
 if not os.path.exists(run_dir):
     os.makedirs(run_dir)
 
-start_epoch = 0
+# start_epoch = 76
 
-stageI_gan = StageIGAN(run_dir, generator_lr=0.0002)
-stageI_gan.load()
-stageI_gan.train(
-    image_files,
-    train_embeds,
-    test_embeds,
-    500,
-    start_epoch=start_epoch,
-    batch_size=32
-)
+# stageI_gan = StageIGAN(run_dir, generator_lr=0.0002)
+# stageI_gan.load()
+# stageI_gan.train(
+#     image_files,
+#     test_files,
+#     train_embeds,
+#     test_embeds,
+#     100,
+#     start_epoch=start_epoch,
+#     batch_size=32
+# )
 stageII_gan = StageIIGAN(run_dir, generator_lr=0.0002)
 
-start_epoch = 0
+start_epoch = 4
 
 stageII_gan.train(
     image_files,
+    test_files,
     train_embeds,
     test_embeds,
-    500,
+    100,
     start_epoch=start_epoch,
-    batch_size=4
+    batch_size=2
 )

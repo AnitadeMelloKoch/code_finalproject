@@ -2,6 +2,7 @@ from tensorflow.keras import Input, Model
 from tensorflow.keras.layers import LeakyReLU, BatchNormalization, Activation
 from tensorflow.keras.layers import Conv2D, Dense
 from tensorflow.keras.layers import Flatten, concatenate
+from tensorflow.keras.activations import sigmoid
 
 from src.utils.discriminator_utils import ConvBlock
 
@@ -40,7 +41,7 @@ def build_stageI_discriminator():
 
     y = Flatten()(y)
     y = Dense(1)(y)
-    y = Activation('sigmoid')(y)
+    y = Activation(sigmoid)(y)
 
     model = Model(inputs=[input_layer1, input_layer2], outputs=[y])
 

@@ -110,7 +110,7 @@ def build_stageII_generator():
     )(x)
     x = Activation('tanh')(x)
 
-    model = Model(inputs=[input_layer1, input_images], outputs=[x, mls])
+    model = Model(inputs=[input_layer1, input_images], outputs=[x])
 
     return model
 
