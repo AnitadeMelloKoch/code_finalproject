@@ -35,7 +35,7 @@ def UpSamplingBlock(x, num_kernels):
         kernel_initializer='he_uniform'
     )(x)
     x = BatchNormalization(gamma_initializer='ones', beta_initializer='zeros')(x)
-    x = ReLU()(x)
+    x = LeakyReLU(alpha=0.2)(x)
 
     return x
 

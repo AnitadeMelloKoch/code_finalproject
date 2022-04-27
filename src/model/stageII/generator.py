@@ -52,7 +52,7 @@ def build_stageII_generator():
         kernel_initializer='he_uniform'
     )(x)
 
-    x = ReLU()(x)
+    x = LeakyReLU(alpha=0.2)(x)
 
     x = ZeroPadding2D(padding=(1,1))(x)
     x = Conv2D(
@@ -63,7 +63,7 @@ def build_stageII_generator():
         kernel_initializer='he_uniform'
     )(x)
     x = BatchNormalization(gamma_initializer='ones', beta_initializer='zeros')(x)
-    x = ReLU()(x)
+    x = LeakyReLU(alpha=0.2)(x)
 
     x = ZeroPadding2D(padding=(1,1))(x)
     x = Conv2D(
@@ -74,7 +74,7 @@ def build_stageII_generator():
         kernel_initializer='he_uniform'
     )(x)
     x = BatchNormalization(gamma_initializer='ones', beta_initializer='zeros')(x)
-    x = ReLU()(x)
+    x = LeakyReLU(alpha=0.2)(x)
 
     # concatenate text conditioning block with encoded image
     concat = concatenate_along_dims([c, x])
@@ -88,7 +88,7 @@ def build_stageII_generator():
         kernel_initializer='he_uniform'
     )(x)
     x = BatchNormalization(gamma_initializer='ones', beta_initializer='zeros')(x)
-    x = ReLU()(x)
+    x = LeakyReLU(alpha=0.2)(x)
 
     x = residual_block(x)
     x = residual_block(x)

@@ -8,7 +8,7 @@ from src.model.stageI.stageI_gan import StageIGAN
 from src.model.stageII.stageII_gan import StageIIGAN
 from src.utils.data_utils import normalize_images
 
-percentage_train = 0.75
+percentage_train = 0.7
 
 caption_embeds = np.load('data/flowers/caption_embeds.npy')
 low_res = []
@@ -34,29 +34,29 @@ run_dir = 'runs/'
 if not os.path.exists(run_dir):
     os.makedirs(run_dir)
 
-# start_epoch = 76
+start_epoch = 0
 
-# stageI_gan = StageIGAN(run_dir, generator_lr=0.0002)
-# stageI_gan.load()
-# stageI_gan.train(
-#     image_files,
-#     test_files,
-#     train_embeds,
-#     test_embeds,
-#     100,
-#     start_epoch=start_epoch,
-#     batch_size=32
-# )
-stageII_gan = StageIIGAN(run_dir, generator_lr=0.0002)
-
-start_epoch = 4
+stageI_gan = StageIGAN(run_dir, generator_lr=0.0002)
+stageI_gan.load()
+stageI_gan.train(
+    image_files,
+    test_files,
+    train_embeds,
+    test_embeds,
+    600,
+    start_epoch=start_epoch,
+    batch_size=64
+)
+stageII_gan = StageIIGAN(run_dir, discriminator_lr=2e-5, generator_lr=3e-5)
+stageII_gan.load()
+start_epoch = 0
 
 stageII_gan.train(
     image_files,
     test_files,
     train_embeds,
     test_embeds,
-    100,
+    600,
     start_epoch=start_epoch,
     batch_size=2
 )

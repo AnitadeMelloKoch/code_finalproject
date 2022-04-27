@@ -22,6 +22,7 @@ from tensorflow.keras.layers import UpSampling2D, Conv2D, Concatenate, Dense, co
 from tensorflow.keras.layers import Flatten, Lambda, Reshape, ZeroPadding2D, add
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.regularizers import L2
 
 def ConvBlock(x, num_kernels, kernel_size=(4,4), strides=2, activation=True):
     x = Conv2D(
@@ -30,7 +31,8 @@ def ConvBlock(x, num_kernels, kernel_size=(4,4), strides=2, activation=True):
         padding='same',
         strides=strides,
         use_bias=False,
-        kernel_initializer='he_uniform'
+        kernel_initializer='he_uniform',
+        kernel_regularizer=L2
     )(x)
     x = BatchNormalization(gamma_initializer='ones', beta_initializer='zeros')(x)
 

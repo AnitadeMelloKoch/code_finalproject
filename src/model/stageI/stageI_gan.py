@@ -84,7 +84,7 @@ class StageIGAN():
         incorrect_caption_loss = self.loss(tf.zeros_like(incorrect_caption_output), incorrect_caption_output)
         fake_loss = self.loss(tf.zeros_like(fake_output), fake_output)
 
-        total_loss = true_loss + incorrect_caption_loss + fake_loss
+        total_loss = true_loss + 0.5*(incorrect_caption_loss + fake_loss)
 
         self.true_loss.append(true_loss)
         self.incorrect_caption_loss.append(incorrect_caption_loss)

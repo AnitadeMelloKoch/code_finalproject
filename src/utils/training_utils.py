@@ -48,3 +48,8 @@ def save_image(file, save_path, title):
     ax.axis("off")
     ax.set_title(title)
     plt.savefig(save_path)
+
+def save_tensorboard_image(images, board, title, step):
+
+    with board.as_default():
+        tf.summary.image(title, images, step=step)

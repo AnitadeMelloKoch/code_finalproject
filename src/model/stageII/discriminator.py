@@ -4,6 +4,7 @@ from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
                                      concatenate)
 from src.utils.discriminator_utils import ConvBlock
 from tensorflow.keras.activations import sigmoid
+from tensorflow.keras.regularizers import L2
 
 
 def build_stageII_discriminator():
@@ -15,7 +16,8 @@ def build_stageII_discriminator():
         padding='same',
         strides=2,
         use_bias=False,
-        kernel_initializer='he_uniform'
+        kernel_initializer='he_uniform',
+        kernel_regularizer=L2
     )(input_layer1)
     x = LeakyReLU(alpha=0.2)(x)
 
@@ -43,14 +45,15 @@ def build_stageII_discriminator():
         kernel_size=(1,1), 
         strides=1,
         padding='same',
-        kernel_initializer='he_uniform'
+        kernel_initializer='he_uniform',
+        kernel_regularizer=L2
     )(concat)
     x3 = BatchNormalization(gamma_initializer='ones', beta_initializer='zeros')(x3)
     x3 = LeakyReLU(alpha=0.2)(x3)
 
     # Flatten and add fc
     x3 = Flatten()(x3)
-    x3 = Dense(1)(x3)
+    x3 = Dense(1, kernel_regularizer=L2)(x3)
     x3 = Activation(sigmoid)(x3)
 
     model = Model(inputs=[input_layer1, input_layer2], outputs=[x3])
