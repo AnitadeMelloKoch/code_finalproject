@@ -8,7 +8,7 @@ from src.model.stageI.discriminator import build_stageI_discriminator
 from src.model.stageI.generator import build_stageI_generator
 from src.utils.conditioning_augmentation import build_ca_network
 from src.utils.discriminator_utils import build_embedding_compressor
-from src.utils.training_utils import adversarial_loss, save_image
+from src.utils.training_utils import adversarial_loss, save_image, save_tensorboard_image
 from tensorflow.keras.optimizers import Adam
 from src.utils.data_utils import get_image
 
@@ -51,10 +51,15 @@ class StageIGAN():
         self.board = tf.summary.create_file_writer(
             os.path.join(self.path, 'logs')
         )
+        self.metric = tf.keras.metrics.BinaryAccuracy()
+
 
         self.true_loss = []
+        self.true_accuracy = []
         self.incorrect_caption_loss = []
+        self.incorrect_caption_accuracy = []
         self.fake_loss = []
+        self.fake_accuracy = []
         self.dis_loss = []
 
         self.gen_loss = []
@@ -79,23 +84,39 @@ class StageIGAN():
         if os.path.exists(os.path.join(save_path, 'emb.h5')):
             self.embedding_compressor.load_weights(os.path.join(save_path, 'emb.h5'))
 
-    def discriminator_loss(self, true_output, incorrect_caption_output, fake_output):
-        true_loss = self.loss(tf.ones_like(true_output), true_output)
-        incorrect_caption_loss = self.loss(tf.zeros_like(incorrect_caption_output), incorrect_caption_output)
-        fake_loss = self.loss(tf.zeros_like(fake_output), fake_output)
+    @staticmethod
+    def generate_labels(tensor, is_true):
+        if is_true:
+            return tf.ones_like(tensor)*0.95 + tf.random.uniform(tensor.shape, minval=-0.25, maxval=0.25)
+        else:
+            return tf.ones_like(tensor)*0.15 + tf.random.uniform(tensor.shape, minval=-0.075, maxval=0.075)
 
-        total_loss = true_loss + 0.5*(incorrect_caption_loss + fake_loss)
+    def discriminator_loss(self, true_output, incorrect_caption_output, fake_output):
+        true_loss = self.loss(self.generate_labels(true_output, True), true_output)
+        incorrect_caption_loss = self.loss(self.generate_labels(incorrect_caption_output, False), incorrect_caption_output)
+        fake_loss = self.loss(self.generate_labels(fake_output, False), fake_output)
+
+        total_loss = 0.5*(true_loss + 0.5*(incorrect_caption_loss + fake_loss))
 
         self.true_loss.append(true_loss)
         self.incorrect_caption_loss.append(incorrect_caption_loss)
         self.fake_loss.append(fake_loss)
         self.dis_loss.append(total_loss)
 
+        self.metric.update_state(tf.ones_like(true_output), true_output)
+        self.true_accuracy.append(self.metric.result().numpy())
+
+        self.metric.update_state(tf.zeros_like(incorrect_caption_output), incorrect_caption_output)
+        self.incorrect_caption_accuracy.append(self.metric.result().numpy())
+        
+        self.metric.update_state(tf.zeros_like(fake_output), fake_output)
+        self.fake_accuracy.append(self.metric.result().numpy())
+
         return total_loss
 
     def generator_loss(self, fake_output):
-        bin_loss = self.loss(tf.ones_like(fake_output), fake_output)
-        kl_loss = self.kl_loss(tf.ones_like(fake_output), fake_output)
+        bin_loss = self.loss(self.generate_labels(fake_output, True), fake_output)
+        kl_loss = self.kl_loss(self.generate_labels(fake_output, True), fake_output)
 
         gen_loss = bin_loss + 2*kl_loss
 
@@ -106,19 +127,27 @@ class StageIGAN():
     def start_epoch(self):
 
         self.true_loss = []
+        self.true_accuracy = []
         self.incorrect_caption_loss = []
+        self.incorrect_caption_accuracy = []
         self.fake_loss = []
+        self.fake_accuracy = []
         self.dis_loss = []
 
         self.gen_loss = []
 
     def end_epoch(self, epoch):
         with self.board.as_default():
-            tf.summary.scalar('True_discriminator_loss', np.mean(self.true_loss), step=epoch)
-            tf.summary.scalar('Incorrect_caption_discriminator_loss', np.mean(self.incorrect_caption_loss), step=epoch)
-            tf.summary.scalar('Fake_discriminator_loss', np.mean(self.fake_loss), step=epoch)
-            tf.summary.scalar('Total_discriminator_loss', np.mean(self.dis_loss), step=epoch)
-            tf.summary.scalar('Generator_loss', np.mean(self.gen_loss), step=epoch)
+            tf.summary.scalar('discriminator/true_discriminator_loss', np.mean(self.true_loss), step=epoch)
+            tf.summary.scalar('discriminator/incorrect_caption_discriminator_loss', np.mean(self.incorrect_caption_loss), step=epoch)
+            tf.summary.scalar('discriminator/fake_discriminator_loss', np.mean(self.fake_loss), step=epoch)
+            tf.summary.scalar('discriminator/total_discriminator_loss', np.mean(self.dis_loss), step=epoch)
+            
+            tf.summary.scalar('generator/generator_loss', np.mean(self.gen_loss), step=epoch)
+
+            tf.summary.scalar('accuracy/true', np.mean(self.true_accuracy), step=epoch)
+            tf.summary.scalar('accuracy/incorrect_caption', np.mean(self.incorrect_caption_accuracy), step=epoch)
+            tf.summary.scalar('accuracy/fake', np.mean(self.fake_accuracy), step=epoch)
             
 
     def train(self,
@@ -171,8 +200,8 @@ class StageIGAN():
                 
                     gen_images = self.generator([embedding_text, latent_space], training=True)
 
-                    real_output = self.discriminator([image_batch[:batch_size//2], compressed_embedding[:batch_size//2]], training=True)
-                    capt_wrong_output = self.discriminator([image_batch[batch_size-batch_size//2:], compressed_embedding_wrong[batch_size-batch_size//2:]], training=True)
+                    real_output = self.discriminator([image_batch, compressed_embedding], training=True)
+                    capt_wrong_output = self.discriminator([image_batch, compressed_embedding_wrong], training=True)
                     gen_output = self.discriminator([gen_images, compressed_embedding], training=True)
 
                     gen_loss = self.generator_loss(gen_output)
@@ -191,22 +220,23 @@ class StageIGAN():
             
             if epoch % 5 == 0:
                 latent_space = np.random.normal(0,1,size=(batch_size, self.embedding_dim))
-                idx = np.random.randint(train_embeds.shape[1])
+                idx = np.random.randint(test_embeds.shape[1])
                 embedding_batch = test_embeds[0:batch_size, idx,:]
                 gen_images = self.generator.predict_on_batch(
                     [embedding_batch, latent_space]
                 )
 
-                
                 save_image(gen_images[0], 
                     os.path.join(image_path, 'gen_epoch{}.png'.format(epoch)),
                     test_files[0]
                 )
 
+                save_tensorboard_image(gen_images[:10], self.board, "caption idx: {}".format(idx), epoch)
+
             self.save()
             
         latent_space = np.random.normal(0,1,size=(batch_size, self.embedding_dim))
-        idx = np.random.randint(train_embeds.shape[1])
+        idx = np.random.randint(test_embeds.shape[1])
         embedding_batch = test_embeds[0:batch_size, idx,:]
         gen_images = self.generator.predict_on_batch(
             [embedding_batch, latent_space]

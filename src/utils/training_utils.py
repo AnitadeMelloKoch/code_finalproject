@@ -35,12 +35,16 @@ def normalize(input_image, real_image):
 
     return input_image, real_image
 
-def save_image(file, save_path, title):
-    min_val = np.min(file)
+def adjust_image(image):
+    min_val = np.min(image)
     if min_val < 0:
-        file = file - min_val
-        max_val = np.max(file)
-        file = file/max_val
+        image = image - min_val
+        max_val = np.max(image)
+        image = image/max_val
+    return image
+
+def save_image(file, save_path, title):
+    file = adjust_image(file)
 
     image = plt.figure(num=1, clear=True)
     ax = image.add_subplot(1,1,1)
@@ -50,6 +54,9 @@ def save_image(file, save_path, title):
     plt.savefig(save_path)
 
 def save_tensorboard_image(images, board, title, step):
+
+    for x in range(len(images)):
+        images[x] = adjust_image(images[x])
 
     with board.as_default():
         tf.summary.image(title, images, step=step)
