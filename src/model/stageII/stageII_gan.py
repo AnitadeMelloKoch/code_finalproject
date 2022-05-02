@@ -256,8 +256,8 @@ class StageIIGAN():
                     file_names[0]
                 )
 
-            save_tensorboard_image(low_fake_images, self.board, 'gen low res epoch: {}'.format(epoch), epoch)
-            save_tensorboard_image(high_fake_images, self.board, 'gen high res epoch: {}'.format(epoch), epoch)
+            save_tensorboard_image(low_fake_images, self.board, 'gen low res', epoch)
+            save_tensorboard_image(high_fake_images, self.board, 'gen high res', epoch)
 
             self.save()
 
