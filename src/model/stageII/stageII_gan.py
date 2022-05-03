@@ -80,12 +80,16 @@ class StageIIGAN():
     def load(self):
         save_path = os.path.join(self.path, 'weights')
         if os.path.exists(os.path.join(save_path, 'gen.h5')):
+            print('Loading generator')
             self.generatorII.load_weights(os.path.join(save_path, 'gen.h5'))
         if os.path.exists(os.path.join(save_path, 'dis.h5')):
+            print('Loading discriminator')
             self.discriminator.load_weights(os.path.join(save_path, 'dis.h5'))
         if os.path.exists(os.path.join(save_path, 'ca.h5')):
+            print('Loading CA')
             self.ca_network.load_weights(os.path.join(save_path, 'ca.h5'))
         if os.path.exists(os.path.join(save_path, 'emb.h5')):
+            print('Loading embedding compressor')
             self.embedding_compressor.load_weights(os.path.join(save_path, 'emb.h5'))
 
     @staticmethod
@@ -158,6 +162,7 @@ class StageIIGAN():
             
 
     def get_generatorI(self):
+        print('Loading generator stageI')
         self.generatorI.load_weights(
             os.path.join(os.path.join(self.stageI_path, "weights", "gen.h5"))
         )
