@@ -42,14 +42,10 @@ def normalize_images(images):
     return images
 
 def normalize_image(image, high_res=True):
-    if high_res:
-        mean = np.load(HIGH_RES_MEAN)
-        std = np.load(HIGH_RES_STD)
-    else:
-        mean = np.load(LOW_RES_MEAN)
-        std = np.load(LOW_RES_STD)
+    
+    image = image*2 -1 
 
-    return (image-mean)/std
+    return image
 
 
 def get_image(file_path, high_res=True):

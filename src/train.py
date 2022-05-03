@@ -49,7 +49,7 @@ start_epoch = 600
 # )
 stageII_gan = StageIIGAN(run_dir, discriminator_lr=5e-6, generator_lr= 5e-6)
 stageII_gan.load()
-start_epoch = 193
+start_epoch = 200
 
 stageII_gan.train(
     image_files,
