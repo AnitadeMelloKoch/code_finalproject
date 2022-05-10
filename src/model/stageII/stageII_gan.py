@@ -14,6 +14,7 @@ from src.utils.conditioning_augmentation import build_ca_network
 from src.utils.discriminator_utils import build_embedding_compressor
 from src.utils.training_utils import adversarial_loss, save_image, save_tensorboard_image
 from src.utils.data_utils import get_image
+from src.model.bert.bert_embedding import Bert
 
 from tqdm import tqdm
 
@@ -39,6 +40,8 @@ class StageIIGAN():
         
         self.generator_optimizer = Adam(lr=generator_lr, beta_1=0.5, beta_2=0.999)
         self.discriminator_optimizer = Adam(lr=discriminator_lr, beta_1=0.5, beta_2=0.999)
+
+        self.bert = Bert()
 
         self.loss = tf.keras.losses.BinaryCrossentropy()
         self.kl_loss = tf.keras.losses.KLDivergence()
@@ -166,6 +169,22 @@ class StageIIGAN():
         self.generatorI.load_weights(
             os.path.join(os.path.join(self.stageI_path, "weights", "gen.h5"))
         )
+
+    def evaluate(self, caption):
+
+        embedding = self.bert.get_embedding(caption)
+        embedding = np.reshape(embedding, (1, -1))
+
+        latent_space = np.random.normal(0,1,size=(1, self.embedding_dim))
+        compressed_embedding = self.embedding_compressor.predict(embedding)
+        compressed_embedding = np.reshape(compressed_embedding, (-1,1,1,self.conditioning_dim))
+        compressed_embedding = np.tile(compressed_embedding, (1,4,4,1))
+
+        low_res = self.generatorI([embedding, latent_space], training=False)
+        high_res = self.generatorII([embedding, low_res])
+
+        return np.array(low_res[0]), np.array(high_res[0])
+
 
     def train(self,
         x_train_list,

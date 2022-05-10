@@ -34,22 +34,22 @@ run_dir = 'runs/'
 if not os.path.exists(run_dir):
     os.makedirs(run_dir)
 
-start_epoch = 600
+start_epoch = 0
 
-# stageI_gan = StageIGAN(run_dir, generator_lr=0.000025, discriminator_lr=0.000025)
-# stageI_gan.load()
-# stageI_gan.train(
-#     image_files,
-#     test_files,
-#     train_embeds,
-#     test_embeds,
-#     600,
-#     start_epoch=start_epoch,
-#     batch_size=64
-# )
-stageII_gan = StageIIGAN(run_dir, discriminator_lr=5e-6, generator_lr= 5e-6)
+stageI_gan = StageIGAN(run_dir, generator_lr=0.0002, discriminator_lr=0.0002)
+stageI_gan.load()
+stageI_gan.train(
+    image_files,
+    test_files,
+    train_embeds,
+    test_embeds,
+    600,
+    start_epoch=start_epoch,
+    batch_size=64
+)
+stageII_gan = StageIIGAN(run_dir, discriminator_lr=0.0002, generator_lr= 0.0002)
 stageII_gan.load()
-start_epoch = 200
+start_epoch = 0
 
 stageII_gan.train(
     image_files,
@@ -58,5 +58,5 @@ stageII_gan.train(
     test_embeds,
     600,
     start_epoch=start_epoch,
-    batch_size=2
+    batch_size=32
 )
